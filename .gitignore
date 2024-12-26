@@ -60,3 +60,9 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+
+# binding temp dirs
+bindings/target
+bindings/verifiable-crypto
+bindings/Generated
+.DS_Store

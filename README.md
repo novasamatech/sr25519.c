@@ -1,2 +1,3 @@
-# sr25519.c
-iOS compatible binding for sr25519 rust implementation 
+## About
+
+iOS compatible binding for [sr25519](https://github.com/w3f/schnorrkel) rust implementation 
