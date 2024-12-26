@@ -1,5 +1,5 @@
 Pod::Spec.new do |s|
-  s.name         = "sr25519c"
+  s.name         = "sr25519.c"
   s.version      = "0.1.0"
   s.summary      = "iOS bindings for sr25519 rust implementation"
   s.homepage     = "https://github.com/novasamatech/sr25519.c"

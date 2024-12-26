@@ -1,7 +1,7 @@
 // swift-tools-version:5.3
 import PackageDescription
 
-let name = "sr25519c"
+let name = "sr25519.c"
 
 let package = Package(
     name: name,
@@ -14,7 +14,7 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: name,
-            path: "./bindings/xcframework/\(name).xcframework"
+            path: "./bindings/xcframework/sr25519c.xcframework"
         )
     ]
 )
