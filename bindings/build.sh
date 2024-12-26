@@ -17,14 +17,14 @@ cargo lipo --release --targets x86_64-apple-ios,aarch64-apple-ios-sim
 # We need single folder with headers to put module map within it
 headers_temp_dir="./headers-tmp"
 mkdir -p $headers_temp_dir
-cp "./Generated/sr25519/sr25519.h" $headers_temp_dir
+cp "./Generated/sr25519/sr25519c.h" $headers_temp_dir
 
 echo "Copied headers to temporary folder: $headers_temp_dir"
 
 # Create module.modulemap file
 cat <<EOF >$headers_temp_dir/module.modulemap
 module ${lib_name} {
-    header "sr25519.h"
+    header "sr25519c.h"
     export *
 }
 EOF

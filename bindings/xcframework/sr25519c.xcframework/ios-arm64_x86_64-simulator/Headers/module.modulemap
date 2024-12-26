@@ -1,4 +1,4 @@
 module sr25519c {
-    header "sr25519.h"
+    header "sr25519c.h"
     export *
 }
