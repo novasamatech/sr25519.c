@@ -1,0 +1,19 @@
+[package]
+name = "sr25519"
+version = "0.1.0"
+edition = "2021"
+
+build = "build.rs"
+
+[lib]
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+schnorrkel = { version="0.9.1" }
+
+[dev-dependencies]
+hex-literal = "0.2.0"
+rand = "0.7.0"
+
+[build-dependencies]
+cbindgen = "0.14.0"
