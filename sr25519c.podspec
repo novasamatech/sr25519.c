@@ -10,6 +10,6 @@ Pod::Spec.new do |s|
   s.ios.deployment_target = '12.0'
   s.swift_version = '5.0'
 
-  s.vendored_frameworks = 'bindings/xcframework/sr25519.xcframework'
-  s.module_name = 'sr25519'
+  s.vendored_frameworks = 'bindings/xcframework/sr25519.c.xcframework'
+  s.module_name = 'sr25519.c'
 end
