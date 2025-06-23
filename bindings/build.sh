@@ -6,44 +6,46 @@ lib_name="sr25519c"
 output_dir="./xcframework"
 release_dir="./target"
 
+# Clear and recreate output
 rm -rf $output_dir
 mkdir -p $output_dir
 
-echo "Building .a libraries"
-
-cargo build --release --target aarch64-apple-darwin
+# Build for Apple targets
 cargo build --release --target aarch64-apple-ios
 cargo build --release --target aarch64-apple-ios-sim
+cargo build --release --target aarch64-apple-darwin
 
-# We need single folder with headers to put module map within it
-headers_temp_dir="./headers-tmp"
-mkdir -p $headers_temp_dir
-cp "./Generated/sr25519/sr25519.h" $headers_temp_dir
+# Create header structure
+headers_root="./headers-tmp"
+headers_nested="$headers_root/$lib_name"
+rm -rf "$headers_root"
+mkdir -p "$headers_nested"
 
-echo "Copied headers to temporary folder: $headers_temp_dir"
+# Copy actual header
+cp "./generated/sr25519/sr25519.h" "$headers_nested/"
 
-# Create module.modulemap file
-cat <<EOF >$headers_temp_dir/module.modulemap
-module ${lib_name} {
-    header "sr25519.h"
+# Create module.modulemap that references the subfolder
+cat <<EOF > "$headers_nested/module.modulemap"
+module $lib_name {
+    header "$lib_name/sr25519.h"
     export *
 }
 EOF
 
-echo "Created module map at: $headers_temp_dir/module.modulemap"
+# Symlink sr25519.h at top-level (so xcodebuild accepts it)
+ln -s "$lib_name/sr25519.h" "$headers_root/sr25519.h"
 
-# Create XCFramework
+# Build XCFramework using xcodebuild
 xcodebuild -create-xcframework \
-    -library "target/aarch64-apple-ios/release/lib${lib_name}.a" \
-    -headers $headers_temp_dir \
-    -library "target/aarch64-apple-ios-sim/release/lib${lib_name}.a" \
-    -headers $headers_temp_dir \
-    -library "target/aarch64-apple-darwin/release/lib${lib_name}.a" \
-    -headers $headers_temp_dir \
+    -library "$release_dir/aarch64-apple-ios/release/lib${lib_name}.a" \
+    -headers "$headers_root" \
+    -library "$release_dir/aarch64-apple-ios-sim/release/lib${lib_name}.a" \
+    -headers "$headers_root" \
+    -library "$release_dir/aarch64-apple-darwin/release/lib${lib_name}.a" \
+    -headers "$headers_root" \
     -output "$output_dir/${lib_name}.xcframework"
 
-echo "XCFramework created at $output_dir/${lib_name}.xcframework"
+# Cleanup
+rm -rf "$headers_root"
 
-rm -rf $headers_temp_dir
-
-echo "Cleanup finished"
+echo "✅ XCFramework created at $output_dir/${lib_name}.xcframework"
