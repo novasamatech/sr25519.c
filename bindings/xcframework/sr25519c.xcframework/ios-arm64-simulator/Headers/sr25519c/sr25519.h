@@ -133,6 +133,16 @@ void sr25519_keypair_from_seed(uint8_t *keypair_out,
                                const uint8_t *seed_ptr);
 
 /**
+ * Creates public key from secret key
+ *
+ * * pubkey_out: pre-allocated output buffer of SR25519_PUBLIC_SIZE bytes
+ * * secret_ptr: secret key - input buffer of SR25519_SECRET_SIZE bytes
+ *
+ */
+void sr25519_secret_to_public_key(uint8_t *pubkey_out,
+                                  const uint8_t *secret_ptr);
+
+/**
  * Sign a message
  *
  * The combination of both public and private key must be provided.

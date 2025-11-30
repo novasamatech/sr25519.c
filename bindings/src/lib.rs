@@ -4,6 +4,7 @@
 
 extern crate schnorrkel;
 
+// Copyright 2025 ERussel via https://github.com/novasamatech/sr25519.c
 // Copyright 2021 ERussel via https://github.com/ERussel/sr25519-crust/tree/feature/ios-support
 // Copyright 2019 Soramitsu via https://github.com/Warchant/sr25519-crust
 // Copyright 2019 Paritytech via https://github.com/paritytech/schnorrkel-js/
@@ -145,6 +146,23 @@ pub const SR25519_VRF_RAW_OUTPUT_SIZE: c_ulong = 16;
 
 /// Size of VRF limit, bytes
 pub const SR25519_VRF_THRESHOLD_SIZE: c_ulong = 16;
+
+/// Creates public key from secret key
+///
+/// * pubkey_out: pre-allocated output buffer of SR25519_PUBLIC_SIZE bytes
+/// * secret_ptr: secret key - input buffer of SR25519_SECRET_SIZE bytes
+///
+#[allow(unused_attributes)]
+#[no_mangle]
+pub unsafe extern "C" fn sr25519_secret_to_public_key(
+    pubkey_out: *mut u8,
+    secret_ptr: *const u8
+) {
+    let secret_bytes = slice::from_raw_parts(secret_ptr, SR25519_SECRET_SIZE as usize);
+    let secret = create_secret(secret_bytes);
+    let p = secret.to_public();
+    ptr::copy(p.to_bytes().as_ptr(), pubkey_out, SR25519_PUBLIC_SIZE as usize);
+}
 
 /// Perform a derivation on a secret
 ///
