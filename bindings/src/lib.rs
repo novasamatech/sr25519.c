@@ -3,6 +3,7 @@
 #![allow(non_snake_case)]
 
 extern crate schnorrkel;
+extern crate merlin;
 
 // Copyright 2025 ERussel via https://github.com/novasamatech/sr25519.c
 // Copyright 2021 ERussel via https://github.com/ERussel/sr25519-crust/tree/feature/ios-support
@@ -20,6 +21,7 @@ use std::os::raw::c_ulong;
 use std::ptr;
 use std::slice;
 
+use merlin::Transcript;
 use schnorrkel::{
     context::signing_context,
     derive::{CHAIN_CODE_LENGTH, ChainCode, Derivation}, ExpansionMode, Keypair, MiniSecretKey, PublicKey,
@@ -60,6 +62,7 @@ fn convert_error(err: &SignatureError) -> Sr25519SignatureResult {
 // We must make sure that this is the same as declared in the substrate source code.
 const SIGNING_CTX: &'static [u8] = b"substrate";
 pub const BABE_VRF_PREFIX: &'static [u8] = b"substrate-babe-vrf";
+
 
 /// ChainCode construction helper
 fn create_cc(data: &[u8]) -> ChainCode {
@@ -146,6 +149,7 @@ pub const SR25519_VRF_RAW_OUTPUT_SIZE: c_ulong = 16;
 
 /// Size of VRF limit, bytes
 pub const SR25519_VRF_THRESHOLD_SIZE: c_ulong = 16;
+
 
 /// Creates public key from secret key
 ///
@@ -456,6 +460,149 @@ pub unsafe extern "C" fn sr25519_vrf_verify(
     }
 }
 
+/// A key-value pair appended to a Merlin transcript, mirroring
+/// `sp_core::sr25519::vrf::VrfTranscript::new(label, &[(key, value), ...])`.
+#[repr(C)]
+pub struct VrfTranscriptField {
+    pub key: *const u8,
+    pub key_length: c_ulong,
+    pub value: *const u8,
+    pub value_length: c_ulong,
+}
+
+/// Sign a VRF transcript built from a caller-supplied label and key-value fields.
+///
+/// Mirrors `VrfTranscript::new(label, &[(key, value), ...])` from sp_core.
+///
+/// @param out_ptr 96-byte output buffer = 32-byte pre-output followed by 64-byte proof
+/// @param keypair_ptr 96-byte sr25519 keypair (64-byte secret followed by 32-byte public)
+/// @param label_ptr transcript label bytes
+/// @param label_length length of the label
+/// @param fields_ptr array of VrfTranscriptField structs
+/// @param fields_count number of fields
+///
+/// @return true on success, false on invalid input
+#[allow(unused_attributes)]
+#[no_mangle]
+pub unsafe extern "C" fn sr25519_generic_vrf_sign(
+    out_ptr: *mut u8,
+    keypair_ptr: *const u8,
+    label_ptr: *const u8,
+    label_length: c_ulong,
+    fields_ptr: *const VrfTranscriptField,
+    fields_count: c_ulong,
+) -> bool {
+    if out_ptr.is_null() || keypair_ptr.is_null() || label_ptr.is_null()
+        || (fields_count > 0 && fields_ptr.is_null())
+    {
+        return false;
+    }
+
+    let keypair_bytes = slice::from_raw_parts(keypair_ptr, SR25519_KEYPAIR_SIZE as usize);
+    let keypair = match Keypair::from_bytes(keypair_bytes) {
+        Ok(kp) => kp,
+        Err(_) => return false,
+    };
+    let label = slice::from_raw_parts(label_ptr, label_length as usize);
+
+    let mut transcript = Transcript::new(label);
+    if fields_count > 0 {
+        let fields = slice::from_raw_parts(fields_ptr, fields_count as usize);
+        for field in fields {
+            if field.key.is_null() || field.value.is_null() {
+                return false;
+            }
+            let key = slice::from_raw_parts(field.key, field.key_length as usize);
+            let value = slice::from_raw_parts(field.value, field.value_length as usize);
+            transcript.append_message(key, value);
+        }
+    }
+
+    let (in_out, proof, _) = keypair.vrf_sign(transcript);
+
+    ptr::copy(
+        in_out.to_output().as_bytes().as_ptr(),
+        out_ptr,
+        SR25519_VRF_OUTPUT_SIZE as usize,
+    );
+    ptr::copy(
+        proof.to_bytes().as_ptr(),
+        out_ptr.add(SR25519_VRF_OUTPUT_SIZE as usize),
+        SR25519_VRF_PROOF_SIZE as usize,
+    );
+
+    true
+}
+
+/// Verify a VRF signature produced by `sr25519_generic_vrf_sign`.
+///
+/// Reconstructs the same Merlin transcript from label and fields,
+/// then verifies the pre-output + proof pair.
+///
+/// @param public_key_ptr 32-byte sr25519 public key
+/// @param label_ptr transcript label bytes
+/// @param label_length length of the label
+/// @param fields_ptr array of VrfTranscriptField structs
+/// @param fields_count number of fields
+/// @param output_ptr 32-byte VRF pre-output
+/// @param proof_ptr 64-byte VRF proof
+///
+/// @return true if the signature is valid, false otherwise
+#[allow(unused_attributes)]
+#[no_mangle]
+pub unsafe extern "C" fn sr25519_generic_vrf_verify(
+    public_key_ptr: *const u8,
+    label_ptr: *const u8,
+    label_length: c_ulong,
+    fields_ptr: *const VrfTranscriptField,
+    fields_count: c_ulong,
+    output_ptr: *const u8,
+    proof_ptr: *const u8,
+) -> bool {
+    if public_key_ptr.is_null() || label_ptr.is_null()
+        || (fields_count > 0 && fields_ptr.is_null())
+        || output_ptr.is_null() || proof_ptr.is_null()
+    {
+        return false;
+    }
+
+    let public_key = match PublicKey::from_bytes(
+        slice::from_raw_parts(public_key_ptr, SR25519_PUBLIC_SIZE as usize),
+    ) {
+        Ok(pk) => pk,
+        Err(_) => return false,
+    };
+    let label = slice::from_raw_parts(label_ptr, label_length as usize);
+
+    let given_out = match VRFOutput::from_bytes(
+        slice::from_raw_parts(output_ptr, SR25519_VRF_OUTPUT_SIZE as usize),
+    ) {
+        Ok(val) => val,
+        Err(_) => return false,
+    };
+    let given_proof = match VRFProof::from_bytes(
+        slice::from_raw_parts(proof_ptr, SR25519_VRF_PROOF_SIZE as usize),
+    ) {
+        Ok(val) => val,
+        Err(_) => return false,
+    };
+
+    let mut transcript = Transcript::new(label);
+    if fields_count > 0 {
+        let fields = slice::from_raw_parts(fields_ptr, fields_count as usize);
+        for field in fields {
+            if field.key.is_null() || field.value.is_null() {
+                return false;
+            }
+            let key = slice::from_raw_parts(field.key, field.key_length as usize);
+            let value = slice::from_raw_parts(field.value, field.value_length as usize);
+            transcript.append_message(key, value);
+        }
+    }
+
+    public_key.vrf_verify(transcript, &given_out, &given_proof).is_ok()
+}
+
 #[cfg(test)]
 pub mod tests {
     extern crate rand;
@@ -607,5 +754,218 @@ pub mod tests {
                                          proof.to_bytes().as_ptr(), threshold_bytes.as_ptr());
             assert_eq!(res.result, Sr25519SignatureResult::Ok);
         }
+    }
+
+    /// Helper to build a VrfTranscriptField for tests
+    fn make_field<'a>(key: &'a [u8], value: &'a [u8]) -> VrfTranscriptField {
+        VrfTranscriptField {
+            key: key.as_ptr(),
+            key_length: key.len() as c_ulong,
+            value: value.as_ptr(),
+            value_length: value.len() as c_ulong,
+        }
+    }
+
+    #[test]
+    fn generic_vrf_sign_produces_valid_output() {
+        let seed = generate_random_seed();
+        let mut keypair_bytes = [0u8; SR25519_KEYPAIR_SIZE as usize];
+        unsafe { sr25519_keypair_from_seed(keypair_bytes.as_mut_ptr(), seed.as_ptr()) };
+
+        let keypair = Keypair::from_bytes(&keypair_bytes).expect("keypair");
+        let public_bytes = keypair.public.to_bytes();
+
+        let label = b"pop:airdrop";
+        let event_id = [42u8; 32];
+        let domain = [label.as_ref(), event_id.as_ref()].concat();
+        let fields = [make_field(b"domain", &domain), make_field(b"signer", &public_bytes)];
+        let mut out = [0u8; (SR25519_VRF_OUTPUT_SIZE + SR25519_VRF_PROOF_SIZE) as usize];
+
+        let ok = unsafe {
+            sr25519_generic_vrf_sign(
+                out.as_mut_ptr(), keypair_bytes.as_ptr(),
+                label.as_ptr(), label.len() as c_ulong,
+                fields.as_ptr(), fields.len() as c_ulong,
+            )
+        };
+        assert!(ok, "generic vrf sign must succeed");
+
+        assert!(out[..SR25519_VRF_OUTPUT_SIZE as usize].iter().any(|&b| b != 0),
+            "pre-output must not be all zeros");
+
+        // Verify using schnorrkel directly: reconstruct the same transcript
+        let mut transcript = Transcript::new(label);
+        transcript.append_message(b"domain", &domain);
+        transcript.append_message(b"signer", &public_bytes);
+
+        let vrf_output = VRFOutput::from_bytes(&out[..SR25519_VRF_OUTPUT_SIZE as usize])
+            .expect("output must be valid");
+        let proof = VRFProof::from_bytes(&out[SR25519_VRF_OUTPUT_SIZE as usize..])
+            .expect("proof must be valid");
+
+        let (in_out, _) = keypair.public.vrf_verify(transcript, &vrf_output, &proof)
+            .expect("VRF verification must succeed");
+        assert_eq!(in_out.to_output(), vrf_output, "output must match after verification");
+    }
+
+    #[test]
+    fn generic_vrf_sign_deterministic_for_same_inputs() {
+        let seed: Vec<u8> = (0..32).map(|i| i as u8).collect();
+        let mut keypair_bytes = [0u8; SR25519_KEYPAIR_SIZE as usize];
+        unsafe { sr25519_keypair_from_seed(keypair_bytes.as_mut_ptr(), seed.as_ptr()) };
+
+        let label = b"my-label";
+        let data = b"my-domain-data";
+        let fields = [make_field(b"data", data)];
+        let mut out1 = [0u8; (SR25519_VRF_OUTPUT_SIZE + SR25519_VRF_PROOF_SIZE) as usize];
+        let mut out2 = [0u8; (SR25519_VRF_OUTPUT_SIZE + SR25519_VRF_PROOF_SIZE) as usize];
+
+        unsafe {
+            sr25519_generic_vrf_sign(
+                out1.as_mut_ptr(), keypair_bytes.as_ptr(),
+                label.as_ptr(), label.len() as c_ulong,
+                fields.as_ptr(), fields.len() as c_ulong,
+            );
+            sr25519_generic_vrf_sign(
+                out2.as_mut_ptr(), keypair_bytes.as_ptr(),
+                label.as_ptr(), label.len() as c_ulong,
+                fields.as_ptr(), fields.len() as c_ulong,
+            );
+        }
+
+        assert_eq!(
+            &out1[..SR25519_VRF_OUTPUT_SIZE as usize],
+            &out2[..SR25519_VRF_OUTPUT_SIZE as usize],
+            "VRF pre-output must be deterministic"
+        );
+    }
+
+    #[test]
+    fn generic_vrf_sign_rejects_null_pointers() {
+        let mut out = [0u8; (SR25519_VRF_OUTPUT_SIZE + SR25519_VRF_PROOF_SIZE) as usize];
+        let keypair = [0u8; SR25519_KEYPAIR_SIZE as usize];
+        let label = b"label";
+        let fields = [make_field(b"k", b"v")];
+
+        unsafe {
+            assert!(!sr25519_generic_vrf_sign(std::ptr::null_mut(), keypair.as_ptr(),
+                label.as_ptr(), label.len() as c_ulong, fields.as_ptr(), fields.len() as c_ulong));
+            assert!(!sr25519_generic_vrf_sign(out.as_mut_ptr(), std::ptr::null(),
+                label.as_ptr(), label.len() as c_ulong, fields.as_ptr(), fields.len() as c_ulong));
+            assert!(!sr25519_generic_vrf_sign(out.as_mut_ptr(), keypair.as_ptr(),
+                std::ptr::null(), label.len() as c_ulong, fields.as_ptr(), fields.len() as c_ulong));
+        }
+    }
+
+    #[test]
+    fn generic_vrf_verify_roundtrip() {
+        let seed = generate_random_seed();
+        let mut keypair_bytes = [0u8; SR25519_KEYPAIR_SIZE as usize];
+        unsafe { sr25519_keypair_from_seed(keypair_bytes.as_mut_ptr(), seed.as_ptr()) };
+        let public = &keypair_bytes[SECRET_KEY_LENGTH..KEYPAIR_LENGTH];
+
+        let label = b"pop:airdrop";
+        let event_id = [99u8; 32];
+        let domain = [label.as_ref(), event_id.as_ref()].concat();
+        let fields = [make_field(b"domain", &domain), make_field(b"signer", public)];
+        let mut out = [0u8; (SR25519_VRF_OUTPUT_SIZE + SR25519_VRF_PROOF_SIZE) as usize];
+
+        unsafe {
+            assert!(sr25519_generic_vrf_sign(
+                out.as_mut_ptr(), keypair_bytes.as_ptr(),
+                label.as_ptr(), label.len() as c_ulong,
+                fields.as_ptr(), fields.len() as c_ulong,
+            ));
+
+            // Valid signature must verify
+            assert!(sr25519_generic_vrf_verify(
+                public.as_ptr(),
+                label.as_ptr(), label.len() as c_ulong,
+                fields.as_ptr(), fields.len() as c_ulong,
+                out.as_ptr(),
+                out.as_ptr().add(SR25519_VRF_OUTPUT_SIZE as usize),
+            ));
+
+            // Wrong field value must fail
+            let wrong_domain = b"wrong-domain";
+            let wrong_fields = [make_field(b"domain", wrong_domain), make_field(b"signer", public)];
+            assert!(!sr25519_generic_vrf_verify(
+                public.as_ptr(),
+                label.as_ptr(), label.len() as c_ulong,
+                wrong_fields.as_ptr(), wrong_fields.len() as c_ulong,
+                out.as_ptr(),
+                out.as_ptr().add(SR25519_VRF_OUTPUT_SIZE as usize),
+            ));
+
+            // Wrong label must fail
+            let wrong_label = b"wrong:label";
+            assert!(!sr25519_generic_vrf_verify(
+                public.as_ptr(),
+                wrong_label.as_ptr(), wrong_label.len() as c_ulong,
+                fields.as_ptr(), fields.len() as c_ulong,
+                out.as_ptr(),
+                out.as_ptr().add(SR25519_VRF_OUTPUT_SIZE as usize),
+            ));
+
+            // Wrong public key must fail
+            let mut wrong_keypair = [0u8; SR25519_KEYPAIR_SIZE as usize];
+            let other_seed = generate_random_seed();
+            sr25519_keypair_from_seed(wrong_keypair.as_mut_ptr(), other_seed.as_ptr());
+            let wrong_public = &wrong_keypair[SECRET_KEY_LENGTH..KEYPAIR_LENGTH];
+            assert!(!sr25519_generic_vrf_verify(
+                wrong_public.as_ptr(),
+                label.as_ptr(), label.len() as c_ulong,
+                fields.as_ptr(), fields.len() as c_ulong,
+                out.as_ptr(),
+                out.as_ptr().add(SR25519_VRF_OUTPUT_SIZE as usize),
+            ));
+        }
+    }
+
+    #[test]
+    fn generic_vrf_verify_rejects_null_pointers() {
+        let public = [0u8; SR25519_PUBLIC_SIZE as usize];
+        let label = b"label";
+        let fields = [make_field(b"k", b"v")];
+        let output = [0u8; SR25519_VRF_OUTPUT_SIZE as usize];
+        let proof = [0u8; SR25519_VRF_PROOF_SIZE as usize];
+
+        unsafe {
+            assert!(!sr25519_generic_vrf_verify(std::ptr::null(),
+                label.as_ptr(), label.len() as c_ulong,
+                fields.as_ptr(), fields.len() as c_ulong,
+                output.as_ptr(), proof.as_ptr()));
+            assert!(!sr25519_generic_vrf_verify(public.as_ptr(),
+                std::ptr::null(), label.len() as c_ulong,
+                fields.as_ptr(), fields.len() as c_ulong,
+                output.as_ptr(), proof.as_ptr()));
+            assert!(!sr25519_generic_vrf_verify(public.as_ptr(),
+                label.as_ptr(), label.len() as c_ulong,
+                fields.as_ptr(), fields.len() as c_ulong,
+                std::ptr::null(), proof.as_ptr()));
+            assert!(!sr25519_generic_vrf_verify(public.as_ptr(),
+                label.as_ptr(), label.len() as c_ulong,
+                fields.as_ptr(), fields.len() as c_ulong,
+                output.as_ptr(), std::ptr::null()));
+        }
+    }
+
+    #[test]
+    fn generic_vrf_sign_with_zero_fields() {
+        let seed = generate_random_seed();
+        let mut keypair_bytes = [0u8; SR25519_KEYPAIR_SIZE as usize];
+        unsafe { sr25519_keypair_from_seed(keypair_bytes.as_mut_ptr(), seed.as_ptr()) };
+
+        let label = b"empty-transcript";
+        let mut out = [0u8; (SR25519_VRF_OUTPUT_SIZE + SR25519_VRF_PROOF_SIZE) as usize];
+
+        let ok = unsafe {
+            sr25519_generic_vrf_sign(
+                out.as_mut_ptr(), keypair_bytes.as_ptr(),
+                label.as_ptr(), label.len() as c_ulong,
+                std::ptr::null(), 0,
+            )
+        };
+        assert!(ok, "signing with zero fields must succeed");
     }
 }

@@ -10,6 +10,7 @@ crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 schnorrkel = { version="0.9.1" }
+merlin = { version = "2", default-features = false }
 
 [dev-dependencies]
 hex-literal = "0.2.0"
