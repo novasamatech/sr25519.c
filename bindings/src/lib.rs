@@ -32,7 +32,7 @@ use std::fmt::{Formatter, Error};
 // otherwise it would've been possible to avoid duplication of macro variant list
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum Sr25519SignatureResult {
+pub enum Sr25519Result {
     Ok,
     EquationFalse,
     PointDecompressionError,
@@ -44,18 +44,18 @@ pub enum Sr25519SignatureResult {
 }
 
 /// converts from schnorrkel::SignatureError
-/// to Sr25519SignatureResult (which is exported to C header)
-fn convert_error(err: &SignatureError) -> Sr25519SignatureResult {
+/// to Sr25519Result (which is exported to C header)
+fn convert_error(err: &SignatureError) -> Sr25519Result {
     match err {
-        SignatureError::EquationFalse => Sr25519SignatureResult::EquationFalse,
-        SignatureError::PointDecompressionError => Sr25519SignatureResult::PointDecompressionError,
-        SignatureError::ScalarFormatError => Sr25519SignatureResult::ScalarFormatError,
+        SignatureError::EquationFalse => Sr25519Result::EquationFalse,
+        SignatureError::PointDecompressionError => Sr25519Result::PointDecompressionError,
+        SignatureError::ScalarFormatError => Sr25519Result::ScalarFormatError,
         SignatureError::BytesLengthError { name: _, description: _, length: _ }
-        => Sr25519SignatureResult::BytesLengthError,
-        SignatureError::MuSigAbsent { musig_stage: _ } => Sr25519SignatureResult::MuSigAbsent,
+        => Sr25519Result::BytesLengthError,
+        SignatureError::MuSigAbsent { musig_stage: _ } => Sr25519Result::MuSigAbsent,
         SignatureError::MuSigInconsistent { musig_stage: _, duplicate: _ }
-        => Sr25519SignatureResult::MuSigInconsistent,
-        SignatureError::NotMarkedSchnorrkel => Sr25519SignatureResult::NotMarkedSchnorrkel
+        => Sr25519Result::MuSigInconsistent,
+        SignatureError::NotMarkedSchnorrkel => Sr25519Result::NotMarkedSchnorrkel
     }
 }
 
@@ -142,7 +142,7 @@ pub const SR25519_VRF_THRESHOLD_SIZE: c_ulong = 16;
 pub unsafe extern "C" fn sr25519_secret_to_public_key(
     pubkey_out: *mut u8,
     secret_ptr: *const u8
-) -> Sr25519SignatureResult {
+) -> Sr25519Result {
     let secret_bytes = slice::from_raw_parts(secret_ptr, SR25519_SECRET_SIZE as usize);
     let secret = match create_secret(secret_bytes) {
         Ok(s) => s,
@@ -150,7 +150,7 @@ pub unsafe extern "C" fn sr25519_secret_to_public_key(
     };
     let p = secret.to_public();
     ptr::copy(p.to_bytes().as_ptr(), pubkey_out, SR25519_PUBLIC_SIZE as usize);
-    Sr25519SignatureResult::Ok
+    Sr25519Result::Ok
 }
 
 /// Perform a derivation on a secret
@@ -165,7 +165,7 @@ pub unsafe extern "C" fn sr25519_derive_keypair_hard(
     keypair_out: *mut u8,
     pair_ptr: *const u8,
     cc_ptr: *const u8,
-) -> Sr25519SignatureResult {
+) -> Sr25519Result {
     let pair = slice::from_raw_parts(pair_ptr, SR25519_KEYPAIR_SIZE as usize);
     let cc = slice::from_raw_parts(cc_ptr, SR25519_CHAINCODE_SIZE as usize);
     let kp = match create_from_pair(pair) {
@@ -178,7 +178,7 @@ pub unsafe extern "C" fn sr25519_derive_keypair_hard(
         .expand_to_keypair(ExpansionMode::Ed25519);
 
     ptr::copy(derived.to_bytes().as_ptr(), keypair_out, SR25519_KEYPAIR_SIZE as usize);
-    Sr25519SignatureResult::Ok
+    Sr25519Result::Ok
 }
 
 /// Perform a derivation on a secret
@@ -193,7 +193,7 @@ pub unsafe extern "C" fn sr25519_derive_keypair_soft(
     keypair_out: *mut u8,
     pair_ptr: *const u8,
     cc_ptr: *const u8,
-) -> Sr25519SignatureResult {
+) -> Sr25519Result {
     let pair = slice::from_raw_parts(pair_ptr, SR25519_KEYPAIR_SIZE as usize);
     let cc = slice::from_raw_parts(cc_ptr, SR25519_CHAINCODE_SIZE as usize);
     let kp = match create_from_pair(pair) {
@@ -203,7 +203,7 @@ pub unsafe extern "C" fn sr25519_derive_keypair_soft(
     let derived = kp.derived_key_simple(create_cc(cc), &[]).0;
 
     ptr::copy(derived.to_bytes().as_ptr(), keypair_out, SR25519_KEYPAIR_SIZE as usize);
-    Sr25519SignatureResult::Ok
+    Sr25519Result::Ok
 }
 
 /// Perform a derivation on a publicKey
@@ -218,7 +218,7 @@ pub unsafe extern "C" fn sr25519_derive_public_soft(
     pubkey_out: *mut u8,
     public_ptr: *const u8,
     cc_ptr: *const u8,
-) -> Sr25519SignatureResult {
+) -> Sr25519Result {
     let public = slice::from_raw_parts(public_ptr, SR25519_PUBLIC_SIZE as usize);
     let cc = slice::from_raw_parts(cc_ptr, SR25519_CHAINCODE_SIZE as usize);
     let p = match create_public(public) {
@@ -227,7 +227,7 @@ pub unsafe extern "C" fn sr25519_derive_public_soft(
     };
     let derived = p.derived_key_simple(create_cc(cc), &[]).0;
     ptr::copy(derived.to_bytes().as_ptr(), pubkey_out, SR25519_PUBLIC_SIZE as usize);
-    Sr25519SignatureResult::Ok
+    Sr25519Result::Ok
 }
 
 /// Generate a key pair.
@@ -237,14 +237,14 @@ pub unsafe extern "C" fn sr25519_derive_public_soft(
 ///
 #[allow(unused_attributes)]
 #[no_mangle]
-pub unsafe extern "C" fn sr25519_keypair_from_seed(keypair_out: *mut u8, seed_ptr: *const u8) -> Sr25519SignatureResult {
+pub unsafe extern "C" fn sr25519_keypair_from_seed(keypair_out: *mut u8, seed_ptr: *const u8) -> Sr25519Result {
     let seed = slice::from_raw_parts(seed_ptr, SR25519_SEED_SIZE as usize);
     let kp = match create_from_seed(seed) {
         Ok(kp) => kp,
         Err(err) => return convert_error(&err),
     };
     ptr::copy(kp.to_bytes().as_ptr(), keypair_out, SR25519_KEYPAIR_SIZE as usize);
-    Sr25519SignatureResult::Ok
+    Sr25519Result::Ok
 }
 
 /// Converts secret key to ed25519 representation.
@@ -254,14 +254,14 @@ pub unsafe extern "C" fn sr25519_keypair_from_seed(keypair_out: *mut u8, seed_pt
 ///
 #[allow(unused_attributes)]
 #[no_mangle]
-pub unsafe extern "C" fn sr25519_to_ed25519_bytes(secret_out: *mut u8, secret_ptr: *const u8) -> Sr25519SignatureResult {
+pub unsafe extern "C" fn sr25519_to_ed25519_bytes(secret_out: *mut u8, secret_ptr: *const u8) -> Sr25519Result {
     let secret = slice::from_raw_parts(secret_ptr, SR25519_SECRET_SIZE as usize);
     let bytes = match to_ed25519_bytes(secret) {
         Ok(b) => b,
         Err(err) => return convert_error(&err),
     };
     ptr::copy(bytes.as_ptr(), secret_out, SR25519_SECRET_SIZE as usize);
-    Sr25519SignatureResult::Ok
+    Sr25519Result::Ok
 }
 
 /// Retrives secret key from ed25519 representation.
@@ -271,14 +271,14 @@ pub unsafe extern "C" fn sr25519_to_ed25519_bytes(secret_out: *mut u8, secret_pt
 ///
 #[allow(unused_attributes)]
 #[no_mangle]
-pub unsafe extern "C" fn sr25519_from_ed25519_bytes(secret_out: *mut u8, secret_ptr: *const u8) -> Sr25519SignatureResult {
+pub unsafe extern "C" fn sr25519_from_ed25519_bytes(secret_out: *mut u8, secret_ptr: *const u8) -> Sr25519Result {
     let secret = slice::from_raw_parts(secret_ptr, SR25519_SECRET_SIZE as usize);
     let sk = match from_ed25519_bytes(secret) {
         Ok(s) => s,
         Err(err) => return convert_error(&err),
     };
     ptr::copy(sk.to_bytes().as_ptr(), secret_out, SR25519_SECRET_SIZE as usize);
-    Sr25519SignatureResult::Ok
+    Sr25519Result::Ok
 }
 
 /// Sign a message
@@ -300,7 +300,7 @@ pub unsafe extern "C" fn sr25519_sign(
     secret_ptr: *const u8,
     message_ptr: *const u8,
     message_length: c_ulong,
-) -> Sr25519SignatureResult {
+) -> Sr25519Result {
     let public = slice::from_raw_parts(public_ptr, SR25519_PUBLIC_SIZE as usize);
     let secret = slice::from_raw_parts(secret_ptr, SR25519_SECRET_SIZE as usize);
     let message = slice::from_raw_parts(message_ptr, message_length as usize);
@@ -320,7 +320,7 @@ pub unsafe extern "C" fn sr25519_sign(
         signature_out,
         SR25519_SIGNATURE_SIZE as usize,
     );
-    Sr25519SignatureResult::Ok
+    Sr25519Result::Ok
 }
 
 /// Verify a message and its corresponding against a public key;
@@ -356,7 +356,7 @@ pub unsafe extern "C" fn sr25519_verify(
 
 #[repr(C)]
 pub struct VrfResult {
-    pub result: Sr25519SignatureResult,
+    pub result: Sr25519Result,
     pub is_less: bool,
 }
 
@@ -366,7 +366,7 @@ impl VrfResult {
     }
 
     fn create_val(is_less: bool) -> VrfResult {
-        VrfResult { is_less, result: Sr25519SignatureResult::Ok }
+        VrfResult { is_less, result: Sr25519Result::Ok }
     }
 }
 
@@ -507,7 +507,7 @@ pub struct VrfTranscriptField {
 /// @param fields_ptr array of VrfTranscriptField structs
 /// @param fields_count number of fields
 ///
-/// @return true on success, false on invalid input
+/// @return Sr25519Result::Ok on success, error code on failure
 #[allow(unused_attributes)]
 #[no_mangle]
 pub unsafe extern "C" fn sr25519_generic_vrf_sign(
@@ -517,17 +517,17 @@ pub unsafe extern "C" fn sr25519_generic_vrf_sign(
     label_length: c_ulong,
     fields_ptr: *const VrfTranscriptField,
     fields_count: c_ulong,
-) -> bool {
+) -> Sr25519Result {
     if out_ptr.is_null() || keypair_ptr.is_null() || label_ptr.is_null()
         || (fields_count > 0 && fields_ptr.is_null())
     {
-        return false;
+        return Sr25519Result::BytesLengthError;
     }
 
     let keypair_bytes = slice::from_raw_parts(keypair_ptr, SR25519_KEYPAIR_SIZE as usize);
     let keypair = match Keypair::from_bytes(keypair_bytes) {
         Ok(kp) => kp,
-        Err(_) => return false,
+        Err(err) => return convert_error(&err),
     };
     let label = slice::from_raw_parts(label_ptr, label_length as usize);
 
@@ -536,7 +536,7 @@ pub unsafe extern "C" fn sr25519_generic_vrf_sign(
         let fields = slice::from_raw_parts(fields_ptr, fields_count as usize);
         for field in fields {
             if field.key.is_null() || field.value.is_null() {
-                return false;
+                return Sr25519Result::BytesLengthError;
             }
             let key = slice::from_raw_parts(field.key, field.key_length as usize);
             let value = slice::from_raw_parts(field.value, field.value_length as usize);
@@ -557,7 +557,7 @@ pub unsafe extern "C" fn sr25519_generic_vrf_sign(
         SR25519_VRF_PROOF_SIZE as usize,
     );
 
-    true
+    Sr25519Result::Ok
 }
 
 /// Verify a VRF signature produced by `sr25519_generic_vrf_sign`.
@@ -573,7 +573,7 @@ pub unsafe extern "C" fn sr25519_generic_vrf_sign(
 /// @param output_ptr 32-byte VRF pre-output
 /// @param proof_ptr 64-byte VRF proof
 ///
-/// @return true if the signature is valid, false otherwise
+/// @return Sr25519Result::Ok if valid, error code otherwise
 #[allow(unused_attributes)]
 #[no_mangle]
 pub unsafe extern "C" fn sr25519_generic_vrf_verify(
@@ -584,19 +584,19 @@ pub unsafe extern "C" fn sr25519_generic_vrf_verify(
     fields_count: c_ulong,
     output_ptr: *const u8,
     proof_ptr: *const u8,
-) -> bool {
+) -> Sr25519Result {
     if public_key_ptr.is_null() || label_ptr.is_null()
         || (fields_count > 0 && fields_ptr.is_null())
         || output_ptr.is_null() || proof_ptr.is_null()
     {
-        return false;
+        return Sr25519Result::BytesLengthError;
     }
 
     let public_key = match PublicKey::from_bytes(
         slice::from_raw_parts(public_key_ptr, SR25519_PUBLIC_SIZE as usize),
     ) {
         Ok(pk) => pk,
-        Err(_) => return false,
+        Err(err) => return convert_error(&err),
     };
     let label = slice::from_raw_parts(label_ptr, label_length as usize);
 
@@ -604,13 +604,13 @@ pub unsafe extern "C" fn sr25519_generic_vrf_verify(
         slice::from_raw_parts(output_ptr, SR25519_VRF_OUTPUT_SIZE as usize),
     ) {
         Ok(val) => val,
-        Err(_) => return false,
+        Err(err) => return convert_error(&err),
     };
     let given_proof = match VRFProof::from_bytes(
         slice::from_raw_parts(proof_ptr, SR25519_VRF_PROOF_SIZE as usize),
     ) {
         Ok(val) => val,
-        Err(_) => return false,
+        Err(err) => return convert_error(&err),
     };
 
     let mut transcript = Transcript::new(label);
@@ -618,7 +618,7 @@ pub unsafe extern "C" fn sr25519_generic_vrf_verify(
         let fields = slice::from_raw_parts(fields_ptr, fields_count as usize);
         for field in fields {
             if field.key.is_null() || field.value.is_null() {
-                return false;
+                return Sr25519Result::BytesLengthError;
             }
             let key = slice::from_raw_parts(field.key, field.key_length as usize);
             let value = slice::from_raw_parts(field.value, field.value_length as usize);
@@ -626,7 +626,10 @@ pub unsafe extern "C" fn sr25519_generic_vrf_verify(
         }
     }
 
-    public_key.vrf_verify(transcript, &given_out, &given_proof).is_ok()
+    match public_key.vrf_verify(transcript, &given_out, &given_proof) {
+        Ok(_) => Sr25519Result::Ok,
+        Err(err) => convert_error(&err),
+    }
 }
 
 #[cfg(test)]
@@ -649,7 +652,7 @@ pub mod tests {
         let mut keypair = [0u8; SR25519_KEYPAIR_SIZE as usize];
         let res = unsafe { sr25519_keypair_from_seed(keypair.as_mut_ptr(), seed.as_ptr()) };
 
-        assert_eq!(res, Sr25519SignatureResult::Ok);
+        assert_eq!(res, Sr25519Result::Ok);
         assert_eq!(keypair.len(), KEYPAIR_LENGTH);
     }
 
@@ -659,7 +662,7 @@ pub mod tests {
         let expected = hex!("46ebddef8cd9bb167dc30878d7113b7e168e6f0646beffd77d69d39bad76b47a");
         let mut keypair = [0u8; SR25519_KEYPAIR_SIZE as usize];
         let res = unsafe { sr25519_keypair_from_seed(keypair.as_mut_ptr(), seed.as_ptr()) };
-        assert_eq!(res, Sr25519SignatureResult::Ok);
+        assert_eq!(res, Sr25519Result::Ok);
         let public = &keypair[SECRET_KEY_LENGTH..KEYPAIR_LENGTH];
 
         assert_eq!(public, expected);
@@ -685,7 +688,7 @@ pub mod tests {
             )
         };
 
-        assert_eq!(res, Sr25519SignatureResult::Ok);
+        assert_eq!(res, Sr25519Result::Ok);
         assert_eq!(signature.len(), SIGNATURE_LENGTH);
     }
 
@@ -728,7 +731,7 @@ pub mod tests {
         let mut derived = [0u8; SR25519_KEYPAIR_SIZE as usize];
         unsafe { sr25519_keypair_from_seed(keypair.as_mut_ptr(), seed.as_ptr()) };
         let res = unsafe { sr25519_derive_keypair_soft(derived.as_mut_ptr(), keypair.as_ptr(), cc.as_ptr()) };
-        assert_eq!(res, Sr25519SignatureResult::Ok);
+        assert_eq!(res, Sr25519Result::Ok);
         let public = &derived[SECRET_KEY_LENGTH..KEYPAIR_LENGTH];
 
         assert_eq!(public, expected);
@@ -741,7 +744,7 @@ pub mod tests {
         let expected = hex!("40b9675df90efa6069ff623b0fdfcf706cd47ca7452a5056c7ad58194d23440a");
         let mut derived = [0u8; SR25519_PUBLIC_SIZE as usize];
         let res = unsafe { sr25519_derive_public_soft(derived.as_mut_ptr(), public.as_ptr(), cc.as_ptr()) };
-        assert_eq!(res, Sr25519SignatureResult::Ok);
+        assert_eq!(res, Sr25519Result::Ok);
 
         assert_eq!(derived, expected);
     }
@@ -755,7 +758,7 @@ pub mod tests {
         unsafe { sr25519_keypair_from_seed(keypair.as_mut_ptr(), seed.as_ptr()) };
         let mut derived = [0u8; SR25519_KEYPAIR_SIZE as usize];
         let res = unsafe { sr25519_derive_keypair_hard(derived.as_mut_ptr(), keypair.as_ptr(), cc.as_ptr()) };
-        assert_eq!(res, Sr25519SignatureResult::Ok);
+        assert_eq!(res, Sr25519Result::Ok);
         let public = &derived[SECRET_KEY_LENGTH..KEYPAIR_LENGTH];
 
         assert_eq!(public, expected);
@@ -767,7 +770,7 @@ pub mod tests {
         let cc = [0u8; SR25519_CHAINCODE_SIZE as usize];
         let mut derived = [0u8; SR25519_KEYPAIR_SIZE as usize];
         let res = unsafe { sr25519_derive_keypair_hard(derived.as_mut_ptr(), bad_pair.as_ptr(), cc.as_ptr()) };
-        assert_ne!(res, Sr25519SignatureResult::Ok);
+        assert_ne!(res, Sr25519Result::Ok);
     }
 
     #[test]
@@ -776,7 +779,7 @@ pub mod tests {
         let cc = [0u8; SR25519_CHAINCODE_SIZE as usize];
         let mut derived = [0u8; SR25519_KEYPAIR_SIZE as usize];
         let res = unsafe { sr25519_derive_keypair_soft(derived.as_mut_ptr(), bad_pair.as_ptr(), cc.as_ptr()) };
-        assert_ne!(res, Sr25519SignatureResult::Ok);
+        assert_ne!(res, Sr25519Result::Ok);
     }
 
     #[test]
@@ -785,7 +788,7 @@ pub mod tests {
         let cc = [0u8; SR25519_CHAINCODE_SIZE as usize];
         let mut derived = [0u8; SR25519_PUBLIC_SIZE as usize];
         let res = unsafe { sr25519_derive_public_soft(derived.as_mut_ptr(), bad_public.as_ptr(), cc.as_ptr()) };
-        assert_ne!(res, Sr25519SignatureResult::Ok);
+        assert_ne!(res, Sr25519Result::Ok);
     }
 
     #[test]
@@ -827,7 +830,7 @@ pub mod tests {
                                          message.as_ptr(), message.len() as c_ulong,
                                          io.as_output_bytes().as_ptr(),
                                          proof.to_bytes().as_ptr(), threshold_bytes.as_ptr());
-            assert_eq!(res.result, Sr25519SignatureResult::Ok);
+            assert_eq!(res.result, Sr25519Result::Ok);
         }
     }
 
@@ -856,14 +859,14 @@ pub mod tests {
         let fields = [make_field(b"domain", &domain), make_field(b"signer", &public_bytes)];
         let mut out = [0u8; (SR25519_VRF_OUTPUT_SIZE + SR25519_VRF_PROOF_SIZE) as usize];
 
-        let ok = unsafe {
+        let res = unsafe {
             sr25519_generic_vrf_sign(
                 out.as_mut_ptr(), keypair_bytes.as_ptr(),
                 label.as_ptr(), label.len() as c_ulong,
                 fields.as_ptr(), fields.len() as c_ulong,
             )
         };
-        assert!(ok, "generic vrf sign must succeed");
+        assert_eq!(res, Sr25519Result::Ok, "generic vrf sign must succeed");
 
         assert!(out[..SR25519_VRF_OUTPUT_SIZE as usize].iter().any(|&b| b != 0),
             "pre-output must not be all zeros");
@@ -923,11 +926,11 @@ pub mod tests {
         let fields = [make_field(b"k", b"v")];
 
         unsafe {
-            assert!(!sr25519_generic_vrf_sign(std::ptr::null_mut(), keypair.as_ptr(),
+            assert_ne!(Sr25519Result::Ok, sr25519_generic_vrf_sign(std::ptr::null_mut(), keypair.as_ptr(),
                 label.as_ptr(), label.len() as c_ulong, fields.as_ptr(), fields.len() as c_ulong));
-            assert!(!sr25519_generic_vrf_sign(out.as_mut_ptr(), std::ptr::null(),
+            assert_ne!(Sr25519Result::Ok, sr25519_generic_vrf_sign(out.as_mut_ptr(), std::ptr::null(),
                 label.as_ptr(), label.len() as c_ulong, fields.as_ptr(), fields.len() as c_ulong));
-            assert!(!sr25519_generic_vrf_sign(out.as_mut_ptr(), keypair.as_ptr(),
+            assert_ne!(Sr25519Result::Ok, sr25519_generic_vrf_sign(out.as_mut_ptr(), keypair.as_ptr(),
                 std::ptr::null(), label.len() as c_ulong, fields.as_ptr(), fields.len() as c_ulong));
         }
     }
@@ -946,14 +949,14 @@ pub mod tests {
         let mut out = [0u8; (SR25519_VRF_OUTPUT_SIZE + SR25519_VRF_PROOF_SIZE) as usize];
 
         unsafe {
-            assert!(sr25519_generic_vrf_sign(
+            assert_eq!(Sr25519Result::Ok, sr25519_generic_vrf_sign(
                 out.as_mut_ptr(), keypair_bytes.as_ptr(),
                 label.as_ptr(), label.len() as c_ulong,
                 fields.as_ptr(), fields.len() as c_ulong,
             ));
 
             // Valid signature must verify
-            assert!(sr25519_generic_vrf_verify(
+            assert_eq!(Sr25519Result::Ok, sr25519_generic_vrf_verify(
                 public.as_ptr(),
                 label.as_ptr(), label.len() as c_ulong,
                 fields.as_ptr(), fields.len() as c_ulong,
@@ -964,7 +967,7 @@ pub mod tests {
             // Wrong field value must fail
             let wrong_domain = b"wrong-domain";
             let wrong_fields = [make_field(b"domain", wrong_domain), make_field(b"signer", public)];
-            assert!(!sr25519_generic_vrf_verify(
+            assert_ne!(Sr25519Result::Ok, sr25519_generic_vrf_verify(
                 public.as_ptr(),
                 label.as_ptr(), label.len() as c_ulong,
                 wrong_fields.as_ptr(), wrong_fields.len() as c_ulong,
@@ -974,7 +977,7 @@ pub mod tests {
 
             // Wrong label must fail
             let wrong_label = b"wrong:label";
-            assert!(!sr25519_generic_vrf_verify(
+            assert_ne!(Sr25519Result::Ok, sr25519_generic_vrf_verify(
                 public.as_ptr(),
                 wrong_label.as_ptr(), wrong_label.len() as c_ulong,
                 fields.as_ptr(), fields.len() as c_ulong,
@@ -987,7 +990,7 @@ pub mod tests {
             let other_seed = generate_random_seed();
             sr25519_keypair_from_seed(wrong_keypair.as_mut_ptr(), other_seed.as_ptr());
             let wrong_public = &wrong_keypair[SECRET_KEY_LENGTH..KEYPAIR_LENGTH];
-            assert!(!sr25519_generic_vrf_verify(
+            assert_ne!(Sr25519Result::Ok, sr25519_generic_vrf_verify(
                 wrong_public.as_ptr(),
                 label.as_ptr(), label.len() as c_ulong,
                 fields.as_ptr(), fields.len() as c_ulong,
@@ -1006,19 +1009,19 @@ pub mod tests {
         let proof = [0u8; SR25519_VRF_PROOF_SIZE as usize];
 
         unsafe {
-            assert!(!sr25519_generic_vrf_verify(std::ptr::null(),
+            assert_ne!(Sr25519Result::Ok, sr25519_generic_vrf_verify(std::ptr::null(),
                 label.as_ptr(), label.len() as c_ulong,
                 fields.as_ptr(), fields.len() as c_ulong,
                 output.as_ptr(), proof.as_ptr()));
-            assert!(!sr25519_generic_vrf_verify(public.as_ptr(),
+            assert_ne!(Sr25519Result::Ok, sr25519_generic_vrf_verify(public.as_ptr(),
                 std::ptr::null(), label.len() as c_ulong,
                 fields.as_ptr(), fields.len() as c_ulong,
                 output.as_ptr(), proof.as_ptr()));
-            assert!(!sr25519_generic_vrf_verify(public.as_ptr(),
+            assert_ne!(Sr25519Result::Ok, sr25519_generic_vrf_verify(public.as_ptr(),
                 label.as_ptr(), label.len() as c_ulong,
                 fields.as_ptr(), fields.len() as c_ulong,
                 std::ptr::null(), proof.as_ptr()));
-            assert!(!sr25519_generic_vrf_verify(public.as_ptr(),
+            assert_ne!(Sr25519Result::Ok, sr25519_generic_vrf_verify(public.as_ptr(),
                 label.as_ptr(), label.len() as c_ulong,
                 fields.as_ptr(), fields.len() as c_ulong,
                 output.as_ptr(), std::ptr::null()));
@@ -1034,13 +1037,13 @@ pub mod tests {
         let label = b"empty-transcript";
         let mut out = [0u8; (SR25519_VRF_OUTPUT_SIZE + SR25519_VRF_PROOF_SIZE) as usize];
 
-        let ok = unsafe {
+        let res = unsafe {
             sr25519_generic_vrf_sign(
                 out.as_mut_ptr(), keypair_bytes.as_ptr(),
                 label.as_ptr(), label.len() as c_ulong,
                 std::ptr::null(), 0,
             )
         };
-        assert!(ok, "signing with zero fields must succeed");
+        assert_eq!(res, Sr25519Result::Ok, "signing with zero fields must succeed");
     }
 }
