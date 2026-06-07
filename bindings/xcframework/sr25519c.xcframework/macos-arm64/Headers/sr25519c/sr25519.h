@@ -60,7 +60,7 @@
  */
 #define SR25519_VRF_THRESHOLD_SIZE 16
 
-typedef enum Sr25519SignatureResult {
+typedef enum Sr25519Result {
   Ok,
   EquationFalse,
   PointDecompressionError,
@@ -69,7 +69,7 @@ typedef enum Sr25519SignatureResult {
   NotMarkedSchnorrkel,
   MuSigAbsent,
   MuSigInconsistent,
-} Sr25519SignatureResult;
+} Sr25519Result;
 
 /**
  * A key-value pair appended to a Merlin transcript, mirroring
@@ -83,7 +83,7 @@ typedef struct VrfTranscriptField {
 } VrfTranscriptField;
 
 typedef struct VrfResult {
-  Sr25519SignatureResult result;
+  Sr25519Result result;
   bool is_less;
 } VrfResult;
 
@@ -95,9 +95,9 @@ typedef struct VrfResult {
  * * cc_ptr: chaincode - input buffer of SR25519_CHAINCODE_SIZE bytes
  *
  */
-Sr25519SignatureResult sr25519_derive_keypair_hard(uint8_t *keypair_out,
-                                                   const uint8_t *pair_ptr,
-                                                   const uint8_t *cc_ptr);
+Sr25519Result sr25519_derive_keypair_hard(uint8_t *keypair_out,
+                                          const uint8_t *pair_ptr,
+                                          const uint8_t *cc_ptr);
 
 /**
  * Perform a derivation on a secret
@@ -107,9 +107,9 @@ Sr25519SignatureResult sr25519_derive_keypair_hard(uint8_t *keypair_out,
  * * cc_ptr: chaincode - input buffer of SR25519_CHAINCODE_SIZE bytes
  *
  */
-Sr25519SignatureResult sr25519_derive_keypair_soft(uint8_t *keypair_out,
-                                                   const uint8_t *pair_ptr,
-                                                   const uint8_t *cc_ptr);
+Sr25519Result sr25519_derive_keypair_soft(uint8_t *keypair_out,
+                                          const uint8_t *pair_ptr,
+                                          const uint8_t *cc_ptr);
 
 /**
  * Perform a derivation on a publicKey
@@ -119,9 +119,9 @@ Sr25519SignatureResult sr25519_derive_keypair_soft(uint8_t *keypair_out,
  * * cc_ptr: chaincode - input buffer of SR25519_CHAINCODE_SIZE bytes
  *
  */
-Sr25519SignatureResult sr25519_derive_public_soft(uint8_t *pubkey_out,
-                                                  const uint8_t *public_ptr,
-                                                  const uint8_t *cc_ptr);
+Sr25519Result sr25519_derive_public_soft(uint8_t *pubkey_out,
+                                         const uint8_t *public_ptr,
+                                         const uint8_t *cc_ptr);
 
 /**
  * Retrives secret key from ed25519 representation.
@@ -130,8 +130,8 @@ Sr25519SignatureResult sr25519_derive_public_soft(uint8_t *pubkey_out,
  * * secret_ptr: generation seed - input buffer of SR25519_SECRET_SIZE bytes
  *
  */
-Sr25519SignatureResult sr25519_from_ed25519_bytes(uint8_t *secret_out,
-                                                  const uint8_t *secret_ptr);
+Sr25519Result sr25519_from_ed25519_bytes(uint8_t *secret_out,
+                                         const uint8_t *secret_ptr);
 
 /**
  * Sign a VRF transcript built from a caller-supplied label and key-value fields.
@@ -145,14 +145,14 @@ Sr25519SignatureResult sr25519_from_ed25519_bytes(uint8_t *secret_out,
  * @param fields_ptr array of VrfTranscriptField structs
  * @param fields_count number of fields
  *
- * @return true on success, false on invalid input
+ * @return Sr25519Result::Ok on success, error code on failure
  */
-bool sr25519_generic_vrf_sign(uint8_t *out_ptr,
-                              const uint8_t *keypair_ptr,
-                              const uint8_t *label_ptr,
-                              unsigned long label_length,
-                              const VrfTranscriptField *fields_ptr,
-                              unsigned long fields_count);
+Sr25519Result sr25519_generic_vrf_sign(uint8_t *out_ptr,
+                                       const uint8_t *keypair_ptr,
+                                       const uint8_t *label_ptr,
+                                       unsigned long label_length,
+                                       const VrfTranscriptField *fields_ptr,
+                                       unsigned long fields_count);
 
 /**
  * Verify a VRF signature produced by `sr25519_generic_vrf_sign`.
@@ -168,15 +168,15 @@ bool sr25519_generic_vrf_sign(uint8_t *out_ptr,
  * @param output_ptr 32-byte VRF pre-output
  * @param proof_ptr 64-byte VRF proof
  *
- * @return true if the signature is valid, false otherwise
+ * @return Sr25519Result::Ok if valid, error code otherwise
  */
-bool sr25519_generic_vrf_verify(const uint8_t *public_key_ptr,
-                                const uint8_t *label_ptr,
-                                unsigned long label_length,
-                                const VrfTranscriptField *fields_ptr,
-                                unsigned long fields_count,
-                                const uint8_t *output_ptr,
-                                const uint8_t *proof_ptr);
+Sr25519Result sr25519_generic_vrf_verify(const uint8_t *public_key_ptr,
+                                         const uint8_t *label_ptr,
+                                         unsigned long label_length,
+                                         const VrfTranscriptField *fields_ptr,
+                                         unsigned long fields_count,
+                                         const uint8_t *output_ptr,
+                                         const uint8_t *proof_ptr);
 
 /**
  * Generate a key pair.
@@ -185,8 +185,8 @@ bool sr25519_generic_vrf_verify(const uint8_t *public_key_ptr,
  * * seed: generation seed - input buffer of SR25519_SEED_SIZE bytes
  *
  */
-Sr25519SignatureResult sr25519_keypair_from_seed(uint8_t *keypair_out,
-                                                 const uint8_t *seed_ptr);
+Sr25519Result sr25519_keypair_from_seed(uint8_t *keypair_out,
+                                        const uint8_t *seed_ptr);
 
 /**
  * Creates public key from secret key
@@ -195,8 +195,8 @@ Sr25519SignatureResult sr25519_keypair_from_seed(uint8_t *keypair_out,
  * * secret_ptr: secret key - input buffer of SR25519_SECRET_SIZE bytes
  *
  */
-Sr25519SignatureResult sr25519_secret_to_public_key(uint8_t *pubkey_out,
-                                                    const uint8_t *secret_ptr);
+Sr25519Result sr25519_secret_to_public_key(uint8_t *pubkey_out,
+                                           const uint8_t *secret_ptr);
 
 /**
  * Sign a message
@@ -211,11 +211,11 @@ Sr25519SignatureResult sr25519_secret_to_public_key(uint8_t *pubkey_out,
  * * message_length: Length of a message
  *
  */
-Sr25519SignatureResult sr25519_sign(uint8_t *signature_out,
-                                    const uint8_t *public_ptr,
-                                    const uint8_t *secret_ptr,
-                                    const uint8_t *message_ptr,
-                                    unsigned long message_length);
+Sr25519Result sr25519_sign(uint8_t *signature_out,
+                           const uint8_t *public_ptr,
+                           const uint8_t *secret_ptr,
+                           const uint8_t *message_ptr,
+                           unsigned long message_length);
 
 /**
  * Converts secret key to ed25519 representation.
@@ -224,8 +224,8 @@ Sr25519SignatureResult sr25519_sign(uint8_t *signature_out,
  * * secret_ptr: generation seed - input buffer of SR25519_SECRET_SIZE bytes
  *
  */
-Sr25519SignatureResult sr25519_to_ed25519_bytes(uint8_t *secret_out,
-                                                const uint8_t *secret_ptr);
+Sr25519Result sr25519_to_ed25519_bytes(uint8_t *secret_out,
+                                       const uint8_t *secret_ptr);
 
 /**
  * Verify a message and its corresponding against a public key;
